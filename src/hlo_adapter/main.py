@@ -1,6 +1,7 @@
-from typing import Dict
+from typing import Dict, Optional
 from model_explorer import Adapter, AdapterMetadata, ModelExplorerGraphs, graph_builder
 from tensorflow.compiler.xla.service.hlo_pb2 import HloModuleProto, HloComputationProto, HloInstructionProto
+from tensorflow.compiler.xla.xla_data_pb2 import PrimitiveType
 
 try:
     from enum import StrEnum
@@ -28,6 +29,9 @@ class Color(StrEnum):
     RED = "#ffcdd2"
     WHITE = "#ffffff"
     YELLOW = "#fff9c4"
+
+
+ETYPE: Dict[int, str] = {v.number: v.name.lower() for v in PrimitiveType.DESCRIPTOR.values}
 
 
 class HloAdapter(Adapter):
@@ -59,6 +63,21 @@ def _to_graph_node_label(inst: HloInstructionProto) -> str:
         return inst.name
     opcode += inst.fusion_kind if inst.opcode == "fusion" else ""
     return f"{opcode}{inst.name}"
+
+
+def _to_etype(etype: Optional[int]) -> str:
+    return ETYPE.get(etype, "?") if etype is not None else "?"
+
+
+def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto):
+    if hasattr(inst, "shape"):
+        etype = _to_etype(getattr(inst.shape, "element_type", None))
+        node.attrs.append(graph_builder.KeyValue(key="element_type", value=etype))
+        dims = "[" + ",".join(str(d) for d in getattr(inst.shape, "dimensions", [])) + "]"
+        node.attrs.append(graph_builder.KeyValue(key="dimensions", value=dims))
+        if hasattr(inst.shape, "layout"):
+            m2m = "{" + ",".join(str(m) for m in getattr(inst.shape.layout, "minor_to_major", [])) + "}"
+            node.attrs.append(graph_builder.KeyValue(key="layout", value=m2m))
 
 
 def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto):
@@ -160,6 +179,7 @@ def _to_graph_nodes(inst: HloInstructionProto) -> graph_builder.Graph:
     node = graph_builder.GraphNode(
         id=inst.id, label=_to_graph_node_label(inst), namespace="", style=_to_graph_node_style(inst)
     )
+    _add_attributes(node, inst)
     _add_incoming_edges(node, inst)
     return node
 
