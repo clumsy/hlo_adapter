@@ -1,0 +1,16 @@
+[project]
+name = "hlo-adapter"
+version = "0.0.1"
+
+dependencies = [
+  "ai-edge-model-explorer",
+  "tensorflow",
+]
+  
+[project.optional-dependencies]
+dev = [
+  "ruff",
+]
+
+[tool.ruff]
+line-length = 120

@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff-check
+        entry: ruff
+        args: [check, --fix, --no-cache]
+        types: [python]
+        language: system
+        exclude: cases_update
+      - id: ruff-format
+        name: ruff-format
+        entry: ruff
+        args: [format]
+        types: [python]
+        language: system
+        exclude: cases_update
