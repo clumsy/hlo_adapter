@@ -78,14 +78,34 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto):
         if hasattr(inst.shape, "layout"):
             m2m = "{" + ",".join(str(m) for m in getattr(inst.shape.layout, "minor_to_major", [])) + "}"
             node.attrs.append(graph_builder.KeyValue(key="layout", value=m2m))
+    if hasattr(inst, "frontend_metadata") and hasattr(inst.frontend_metadata, "map"):
+        for k, v in inst.frontend_metadata.map.items():
+            node.attrs.append(graph_builder.KeyValue(key=k, value=v))
+            print(type(v), v)
+    if hasattr(inst, "comparison_direction"):
+        node.attrs.append(graph_builder.KeyValue(key="comparison_direction", value=inst.comparison_direction))
+    if hasattr(inst, "comparison_type"):
+        node.attrs.append(graph_builder.KeyValue(key="comparison_type", value=inst.comparison_type))
+    if hasattr(inst, "replica_groups"):
+        for i, rg in enumerate(inst.replica_groups):
+            rg_ids = "[" + ",".join(str(rg_id) for rg_id in rg.replica_ids) + "]"
+            node.attrs.append(graph_builder.KeyValue(key=f"replica_groups[{i}].size", value=str(len(rg.replica_ids))))
+            node.attrs.append(graph_builder.KeyValue(key=f"replica_groups[{i}].replica_ids", value=rg_ids))
 
 
 def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto):
     if inst.opcode == "parameter" and hasattr(inst, "fused"):
         pass
     else:
+        if hasattr(inst, "called_computation_ids"):
+            for i, op_id in enumerate(inst.called_computation_ids):
+                node.incomingEdges.append(
+                    graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"called_computation_ids[{i}]")
+                )
         for i, op_id in enumerate(inst.operand_ids):
-            node.incomingEdges.append(graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=str(i)))
+            node.incomingEdges.append(
+                graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"operand_ids[{i}]")
+            )
         if hasattr(inst, "control_predecessors"):
             for pred in inst.control_predecessors:
                 node.incomingEdges.append(
