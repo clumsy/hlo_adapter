@@ -100,16 +100,14 @@ def _add_metadata(node: graph_builder.GraphNode, meta: HloModuleMetadataProto) -
 def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) -> None:
     if hasattr(inst, "shape"):
         etype = _to_etype(getattr(inst.shape, "element_type", None))
-        node.attrs.append(graph_builder.KeyValue(key="element_type", value=etype))
         dims = "[" + ",".join(str(d) for d in getattr(inst.shape, "dimensions", [])) + "]"
-        node.attrs.append(graph_builder.KeyValue(key="dimensions", value=dims))
         if hasattr(inst.shape, "layout"):
             m2m = "{" + ",".join(str(m) for m in getattr(inst.shape.layout, "minor_to_major", [])) + "}"
-            node.attrs.append(graph_builder.KeyValue(key="layout", value=m2m))
+        shape = f"{etype}{dims}{m2m}"
+        node.attrs.append(graph_builder.KeyValue(key="shape", value=shape))
     if hasattr(inst, "frontend_metadata") and hasattr(inst.frontend_metadata, "map"):
         for k, v in inst.frontend_metadata.map.items():
             node.attrs.append(graph_builder.KeyValue(key=k, value=v))
-            print(type(v), v)
     if hasattr(inst, "metadata"):
         _add_metadata(node, inst.metadata)
     if hasattr(inst, "comparison_direction"):
