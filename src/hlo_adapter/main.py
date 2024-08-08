@@ -88,13 +88,14 @@ def _to_etype(etype: Optional[int]) -> str:
 
 def _add_metadata(node: graph_builder.GraphNode, meta: HloModuleMetadataProto) -> None:
     if hasattr(meta, "op_name"):
-        node.attrs.append(graph_builder.KeyValue(key="metadata.op_name", value=meta.op_name))
+        node.attrs.append(graph_builder.KeyValue(key="meta.op_name", value=meta.op_name))
+        node.attrs.append(graph_builder.KeyValue(key="meta.short_op_name", value=meta.op_name.split('/')[-1]))
     if hasattr(meta, "source_file"):
         source_file = getattr(meta, "source_file", "")
         source_line = getattr(meta, "source_line", "")
         stack_frame_id = getattr(meta, "stack_frame_id", "")
         source = f"{'[' + str(stack_frame_id) + '] ' if stack_frame_id else ''}{source_file}{':' + str(source_line) if source_line else ''}"
-        node.attrs.append(graph_builder.KeyValue(key="metadata.source", value=source))
+        node.attrs.append(graph_builder.KeyValue(key="meta.source", value=source))
 
 
 def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) -> None:
@@ -136,7 +137,6 @@ def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto
             node.incomingEdges.append(
                 graph_builder.IncomingEdge(sourceNodeId=pred.id, targetNodeInputId="0")
             )  # mark as control edge
-
 
 def _is_effectively_scalar(inst: HloInstructionProto) -> bool:
     return (
@@ -219,10 +219,18 @@ def _to_graph_node_style(inst: HloInstructionProto) -> graph_builder.GraphNodeSt
     style = graph_builder.GraphNodeStyle(backgroundColor=_to_bg_color(inst))
     return style
 
+def _get_namespace(inst: HloInstructionProto) -> str:
+    try:
+        # Using the op_name hierarchy to represent the op namespace
+        # jit(train_step)/jit(main)/jvp(Transformer)/decoder/layers_0/pre_self_attention_layer_norm/convert.161
+        namespace = '/'.join(inst.metadata.op_name.split('/')[:-1])
+    except AttributeError:
+        namespace = ""
+    return namespace
 
 def _to_graph_nodes(inst: HloInstructionProto) -> graph_builder.Graph:
     node = graph_builder.GraphNode(
-        id=inst.id, label=_to_graph_node_label(inst), namespace="", style=_to_graph_node_style(inst)
+        id=inst.id, label=_to_graph_node_label(inst), namespace=_get_namespace(inst), style=_to_graph_node_style(inst)
     )
     _add_attributes(node, inst)
     _add_incoming_edges(node, inst)
