@@ -1,6 +1,12 @@
 from typing import Dict, Optional
 from model_explorer import Adapter, AdapterMetadata, ModelExplorerGraphs, graph_builder
-from tensorflow.compiler.xla.service.hlo_pb2 import HloProto, HloModuleProto, HloComputationProto, HloInstructionProto
+from tensorflow.compiler.xla.service.hlo_pb2 import (
+    HloProto,
+    HloModuleProto,
+    HloComputationProto,
+    HloInstructionProto,
+    HloModuleMetadataProto,
+)
 from tensorflow.compiler.xla.xla_data_pb2 import PrimitiveType
 
 try:
@@ -44,7 +50,7 @@ class HloAdapter(Adapter):
     )
 
     # Required.
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def convert(self, model_path: str, settings: Dict) -> ModelExplorerGraphs:
@@ -80,7 +86,18 @@ def _to_etype(etype: Optional[int]) -> str:
     return ETYPE.get(etype, "?") if etype is not None else "?"
 
 
-def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto):
+def _add_metadata(node: graph_builder.GraphNode, meta: HloModuleMetadataProto) -> None:
+    if hasattr(meta, "op_name"):
+        node.attrs.append(graph_builder.KeyValue(key="metadata.op_name", value=meta.op_name))
+    if hasattr(meta, "source_file"):
+        source_file = getattr(meta, "source_file", "")
+        source_line = getattr(meta, "source_line", "")
+        stack_frame_id = getattr(meta, "stack_frame_id", "")
+        source = f"{'[' + str(stack_frame_id) + '] ' if stack_frame_id else ''}{source_file}{':' + str(source_line) if source_line else ''}"
+        node.attrs.append(graph_builder.KeyValue(key="metadata.source", value=source))
+
+
+def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) -> None:
     if hasattr(inst, "shape"):
         etype = _to_etype(getattr(inst.shape, "element_type", None))
         node.attrs.append(graph_builder.KeyValue(key="element_type", value=etype))
@@ -93,6 +110,8 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto):
         for k, v in inst.frontend_metadata.map.items():
             node.attrs.append(graph_builder.KeyValue(key=k, value=v))
             print(type(v), v)
+    if hasattr(inst, "metadata"):
+        _add_metadata(node, inst.metadata)
     if hasattr(inst, "comparison_direction"):
         node.attrs.append(graph_builder.KeyValue(key="comparison_direction", value=inst.comparison_direction))
     if hasattr(inst, "comparison_type"):
@@ -104,24 +123,21 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto):
             node.attrs.append(graph_builder.KeyValue(key=f"replica_groups[{i}].replica_ids", value=rg_ids))
 
 
-def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto):
+def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto) -> None:
     if inst.opcode == "parameter" and hasattr(inst, "fused"):
-        pass
-    else:
-        if hasattr(inst, "called_computation_ids"):
-            for i, op_id in enumerate(inst.called_computation_ids):
-                node.incomingEdges.append(
-                    graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"called_computation_ids[{i}]")
-                )
-        for i, op_id in enumerate(inst.operand_ids):
+        return
+    if hasattr(inst, "called_computation_ids"):
+        for i, op_id in enumerate(inst.called_computation_ids):
             node.incomingEdges.append(
-                graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"operand_ids[{i}]")
+                graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"called_computation_ids[{i}]")
             )
-        if hasattr(inst, "control_predecessors"):
-            for pred in inst.control_predecessors:
-                node.incomingEdges.append(
-                    graph_builder.IncomingEdge(sourceNodeId=pred.id, targetNodeInputId="0")
-                )  # mark as control edge
+    for i, op_id in enumerate(inst.operand_ids):
+        node.incomingEdges.append(graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"operand_ids[{i}]"))
+    if hasattr(inst, "control_predecessors"):
+        for pred in inst.control_predecessors:
+            node.incomingEdges.append(
+                graph_builder.IncomingEdge(sourceNodeId=pred.id, targetNodeInputId="0")
+            )  # mark as control edge
 
 
 def _is_effectively_scalar(inst: HloInstructionProto) -> bool:
