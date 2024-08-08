@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 from model_explorer import Adapter, AdapterMetadata, ModelExplorerGraphs, graph_builder
-from tensorflow.compiler.xla.service.hlo_pb2 import HloModuleProto, HloComputationProto, HloInstructionProto
+from tensorflow.compiler.xla.service.hlo_pb2 import HloProto, HloModuleProto, HloComputationProto, HloInstructionProto
 from tensorflow.compiler.xla.xla_data_pb2 import PrimitiveType
 
 try:
@@ -48,11 +48,22 @@ class HloAdapter(Adapter):
         super().__init__()
 
     def convert(self, model_path: str, settings: Dict) -> ModelExplorerGraphs:
-        hlo_module = HloModuleProto()
-        with open(model_path, "rb") as f:
-            hlo_module.ParseFromString(f.read())
+        hlo_module = _to_module(model_path)
         graphs = [_to_graph(comp) for comp in hlo_module.computations]
         return {"graphs": graphs}
+
+
+def _to_module(path: str) -> HloModuleProto:
+    try:
+        hlo = HloProto()
+        with open(path, "rb") as f:
+            hlo.ParseFromString(f.read())
+        return hlo.hlo_module
+    except Exception:
+        hlo_module = HloModuleProto()
+        with open(path, "rb") as f:
+            hlo_module.ParseFromString(f.read())
+        return hlo_module
 
 
 def _to_graph_node_label(inst: HloInstructionProto) -> str:
