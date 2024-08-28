@@ -89,7 +89,7 @@ def _to_etype(etype: Optional[int]) -> str:
 def _add_metadata(node: graph_builder.GraphNode, meta: HloModuleMetadataProto) -> None:
     if hasattr(meta, "op_name"):
         node.attrs.append(graph_builder.KeyValue(key="meta.op_name", value=meta.op_name))
-        node.attrs.append(graph_builder.KeyValue(key="meta.short_op_name", value=meta.op_name.split('/')[-1]))
+        node.attrs.append(graph_builder.KeyValue(key="meta.short_op_name", value=meta.op_name.split("/")[-1]))
     if hasattr(meta, "source_file"):
         source_file = getattr(meta, "source_file", "")
         source_line = getattr(meta, "source_line", "")
@@ -102,10 +102,17 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) ->
     if hasattr(inst, "shape"):
         etype = _to_etype(getattr(inst.shape, "element_type", None))
         dims = "[" + ",".join(str(d) for d in getattr(inst.shape, "dimensions", [])) + "]"
-        if hasattr(inst.shape, "layout"):
-            m2m = "{" + ",".join(str(m) for m in getattr(inst.shape.layout, "minor_to_major", [])) + "}"
-        shape = f"{etype}{dims}{m2m}"
-        node.attrs.append(graph_builder.KeyValue(key="shape", value=shape))
+        m2m = (
+            "{" + ",".join(str(m) for m in getattr(inst.shape.layout, "minor_to_major", [])) + "}"
+            if hasattr(inst.shape, "layout")
+            else ""
+        )
+        node.attrs.append(graph_builder.KeyValue(key="shape", value=f"{etype}{dims}{m2m}"))
+        node.outputsMetadata.append(
+            graph_builder.MetadataItem(
+                id="0", attrs=[graph_builder.KeyValue(key="tensor_shape", value=f"{etype}{dims}")]
+            )
+        )
     if hasattr(inst, "frontend_metadata") and hasattr(inst.frontend_metadata, "map"):
         for k, v in inst.frontend_metadata.map.items():
             node.attrs.append(graph_builder.KeyValue(key=k, value=v))
@@ -128,15 +135,22 @@ def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto
     if hasattr(inst, "called_computation_ids"):
         for i, op_id in enumerate(inst.called_computation_ids):
             node.incomingEdges.append(
-                graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"called_computation_ids[{i}]")
+                graph_builder.IncomingEdge(
+                    sourceNodeOutputId="0", sourceNodeId=op_id, targetNodeInputId=f"called_computation_ids[{i}]"
+                )
             )
     for i, op_id in enumerate(inst.operand_ids):
-        node.incomingEdges.append(graph_builder.IncomingEdge(sourceNodeId=op_id, targetNodeInputId=f"operand_ids[{i}]"))
+        node.incomingEdges.append(
+            graph_builder.IncomingEdge(
+                sourceNodeOutputId="0", sourceNodeId=op_id, targetNodeInputId=f"operand_ids[{i}]"
+            )
+        )
     if hasattr(inst, "control_predecessors"):
         for pred in inst.control_predecessors:
             node.incomingEdges.append(
-                graph_builder.IncomingEdge(sourceNodeId=pred.id, targetNodeInputId="0")
+                graph_builder.IncomingEdge(sourceNodeOutputId="0", sourceNodeId=pred.id, targetNodeInputId="0")
             )  # mark as control edge
+
 
 def _is_effectively_scalar(inst: HloInstructionProto) -> bool:
     return (
@@ -219,14 +233,16 @@ def _to_graph_node_style(inst: HloInstructionProto) -> graph_builder.GraphNodeSt
     style = graph_builder.GraphNodeStyle(backgroundColor=_to_bg_color(inst))
     return style
 
+
 def _get_namespace(inst: HloInstructionProto) -> str:
     try:
         # Using the op_name hierarchy to represent the op namespace
         # jit(train_step)/jit(main)/jvp(Transformer)/decoder/layers_0/pre_self_attention_layer_norm/convert.161
-        namespace = '/'.join(inst.metadata.op_name.split('/')[:-1])
+        namespace = "/".join(inst.metadata.op_name.split("/")[:-1])
     except AttributeError:
         namespace = ""
     return namespace
+
 
 def _to_graph_nodes(inst: HloInstructionProto) -> graph_builder.Graph:
     node = graph_builder.GraphNode(
