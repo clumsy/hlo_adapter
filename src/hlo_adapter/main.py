@@ -127,7 +127,28 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) ->
             rg_ids = "[" + ",".join(str(rg_id) for rg_id in rg.replica_ids) + "]"
             node.attrs.append(graph_builder.KeyValue(key=f"replica_groups[{i}].size", value=str(len(rg.replica_ids))))
             node.attrs.append(graph_builder.KeyValue(key=f"replica_groups[{i}].replica_ids", value=rg_ids))
-
+    if hasattr(inst, "sharding"):
+        # TODO support tuple of shardings for tuple op
+        if hasattr(inst.sharding, "tile_assignment_dimensions"):
+            shard_shape = [x for x in inst.sharding.tile_assignment_dimensions]
+        else:
+            shard_shape = []
+        node.attrs.append(graph_builder.KeyValue(key="sharding.shape", value=','.join([str(x) for x in shard_shape])))
+        shard_devices = ''
+        if hasattr(inst.sharding, "iota_reshape_dims"):
+            iota_reshape_dims = [x for x in inst.sharding.iota_reshape_dims]
+            shard_devices = ','.join([str(x) for x in iota_reshape_dims])
+        if hasattr(inst.sharding, "iota_transpose_perm"):
+            iota_transpose_perm = [x for x in inst.sharding.iota_transpose_perm]
+            shard_devices += f' T[{",".join([str(x) for x in iota_transpose_perm])}]'
+        if hasattr(inst.sharding, "replicate_on_last_tile_dim"):
+            replicate_on_last_tile_dim = inst.sharding.replicate_on_last_tile_dim
+        else:
+            replicate_on_last_tile_dim = False
+        node.attrs.append(
+            graph_builder.KeyValue(key="sharding.replicate_last_tile_dim", value=str(replicate_on_last_tile_dim))
+        )
+        node.attrs.append(graph_builder.KeyValue(key="sharding.devices", value=shard_devices))
 
 def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto) -> None:
     if inst.opcode == "parameter" and hasattr(inst, "fused"):
