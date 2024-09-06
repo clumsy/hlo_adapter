@@ -108,11 +108,9 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) ->
             else ""
         )
         node.attrs.append(graph_builder.KeyValue(key="shape", value=f"{etype}{dims}{m2m}"))
-        node.outputsMetadata.append(
-            graph_builder.MetadataItem(
-                id="0", attrs=[graph_builder.KeyValue(key="tensor_shape", value=f"{etype}{dims}")]
-            )
-        )
+    node.outputsMetadata.append(
+        graph_builder.MetadataItem(id="0", attrs=[graph_builder.KeyValue(key="tensor_shape", value=f"{etype}{dims}")])
+    )
     if hasattr(inst, "frontend_metadata") and hasattr(inst.frontend_metadata, "map"):
         for k, v in inst.frontend_metadata.map.items():
             node.attrs.append(graph_builder.KeyValue(key=k, value=v))
@@ -133,11 +131,11 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) ->
             shard_shape = [x for x in inst.sharding.tile_assignment_dimensions]
         else:
             shard_shape = []
-        node.attrs.append(graph_builder.KeyValue(key="sharding.shape", value=','.join([str(x) for x in shard_shape])))
-        shard_devices = ''
+        node.attrs.append(graph_builder.KeyValue(key="sharding.shape", value=",".join([str(x) for x in shard_shape])))
+        shard_devices = ""
         if hasattr(inst.sharding, "iota_reshape_dims"):
             iota_reshape_dims = [x for x in inst.sharding.iota_reshape_dims]
-            shard_devices = ','.join([str(x) for x in iota_reshape_dims])
+            shard_devices = ",".join([str(x) for x in iota_reshape_dims])
         if hasattr(inst.sharding, "iota_transpose_perm"):
             iota_transpose_perm = [x for x in inst.sharding.iota_transpose_perm]
             shard_devices += f' T[{",".join([str(x) for x in iota_transpose_perm])}]'
@@ -149,6 +147,7 @@ def _add_attributes(node: graph_builder.GraphNode, inst: HloInstructionProto) ->
             graph_builder.KeyValue(key="sharding.replicate_last_tile_dim", value=str(replicate_on_last_tile_dim))
         )
         node.attrs.append(graph_builder.KeyValue(key="sharding.devices", value=shard_devices))
+
 
 def _add_incoming_edges(node: graph_builder.GraphNode, inst: HloInstructionProto) -> None:
     if inst.opcode == "parameter" and hasattr(inst, "fused"):
@@ -267,7 +266,10 @@ def _get_namespace(inst: HloInstructionProto) -> str:
 
 def _to_graph_nodes(inst: HloInstructionProto) -> graph_builder.Graph:
     node = graph_builder.GraphNode(
-        id=inst.id, label=_to_graph_node_label(inst), namespace=_get_namespace(inst), style=_to_graph_node_style(inst)
+        id=str(inst.id),
+        label=_to_graph_node_label(inst),
+        namespace=_get_namespace(inst),
+        style=_to_graph_node_style(inst),
     )
     _add_attributes(node, inst)
     _add_incoming_edges(node, inst)
